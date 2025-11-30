@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1337MED | GET Test</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;600;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="brand">
+            <span>./</span>1337MED
+        </div>
+        <nav>
+            <ul class="nav-links">
+                <li><a href="index.html">Dashboard</a></li>
+                <li><a href="get.html" class="active">GET Method</a></li>
+                <li><a href="post.html">POST Method</a></li>
+                <li><a href="delete.html">DELETE Method</a></li>
+                <li><a href="cgi.html">CGI Scripts</a></li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        <h1>GET Method Test <span class="status-badge status-get"
+                style="vertical-align: middle; margin-left: 1rem;">GET</span></h1>
+
+        <div class="card">
+            <div class="card-header">
+                <span>Static Content Delivery</span>
+            </div>
+            <p class="mb-4">The server should correctly serve static files (HTML, CSS, Images) with the appropriate MIME
+                types.</p>
+
+            <div style="display: flex; gap: 2rem; align-items: flex-start;">
+                <div style="flex: 1;">
+                    <h3 style="font-size: 1rem; color: var(--text-muted);">Image Asset</h3>
+                    <!-- Using a placeholder or existing asset if available. Assuming assets folder is populated or will be. -->
+                    <div
+                        style="width: 100%; height: 200px; background: #21262d; border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; border-radius: 6px;">
+                        <span style="color: var(--text-muted);">Image Placeholder</span>
+                    </div>
+                </div>
+                <div style="flex: 1;">
+                    <h3 style="font-size: 1rem; color: var(--text-muted);">Text Content</h3>
+                    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut
+                        labore et dolore magna aliqua.</p>
+                    <a href="index.html" class="btn btn-primary mt-4">Navigate Back</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span>Directory Listing</span>
+            </div>
+            <p>If autoindex is enabled, navigating to a directory without an index file should show a listing.</p>
+            <a href="/css/" class="btn btn-primary mt-4">View /css/ Directory</a>
+        </div>
+    </main>
+</body>
+
+</html>

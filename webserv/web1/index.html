@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1337MED | Webserv Environment</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;600;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="brand">
+            <span>./</span>1337MED
+        </div>
+        <nav>
+            <ul class="nav-links">
+                <li><a href="index.html" class="active">Dashboard</a></li>
+                <li><a href="get.html">GET Method</a></li>
+                <li><a href="post.html">POST Method</a></li>
+                <li><a href="delete.html">DELETE Method</a></li>
+                <li><a href="cgi.html">CGI Scripts</a></li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        <h1>Server Environment</h1>
+
+        <div class="card">
+            <div class="card-header">
+                <span>System Status</span>
+            </div>
+            <p>Welcome to the 1337MED Webserv testing environment. This interface is designed to rigorously test the
+                capabilities of your HTTP server implementation.</p>
+            <div class="terminal mt-4">
+                <span class="terminal-line">Initializing system...</span>
+                <span class="terminal-line">Loading modules... [OK]</span>
+                <span class="terminal-line">Server listening on port configured in .conf</span>
+                <span class="terminal-line">Ready for requests.</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span>Quick Stats</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                <div>
+                    <h3 style="margin-bottom: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">PROTOCOL</h3>
+                    <p style="font-family: var(--font-mono); font-size: 1.2rem;">HTTP/1.1</p>
+                </div>
+                <div>
+                    <h3 style="margin-bottom: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">SERVER</h3>
+                    <p style="font-family: var(--font-mono); font-size: 1.2rem;">Webserv/1.0</p>
+                </div>
+                <div>
+                    <h3 style="margin-bottom: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">STATUS</h3>
+                    <span class="status-badge status-post">ONLINE</span>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+
+</html>
