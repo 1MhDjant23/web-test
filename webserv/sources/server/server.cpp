@@ -247,6 +247,7 @@ Client& Server::getClientReqCGI(int pipeFd) {
         if (pipeFd == _client[i]._cgiProc._readPipe)
             return _client[i];
     }
+    std::cout << "+++++++++++++++++++++++++++++++" << std::endl;
     /**
      * in all cases it can't reach this line: return _client[0];
      * so, it's just to silent errors!*/
