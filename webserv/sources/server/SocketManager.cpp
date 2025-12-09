@@ -1,9 +1,15 @@
+#include "../../includes/serverHeader/Server.hpp"
 #include "../../includes/serverHeader/SocketManager.hpp"
 #include "../../includes/serverHeader/ServerUtils.hpp"
 #include "../../includes/serverHeader/Client.hpp"
 #include "../../includes/serverHeader/CookiesSessionManager.hpp"
 #include "../../includes/response.hpp"
+#include <cerrno>
+#include <cstddef>
+#include <cstring>
 #include <iostream>
+#include <stdexcept>
+#include <sys/poll.h>
 // #include "../CGI.hpp"
 // #include "../../includes/Utils.hpp"
 
@@ -56,7 +62,7 @@ void    SocketManager::initSockets(void) {
         int fd = socket(results->ai_family, results->ai_socktype, IPPROTO_TCP);
         if (fd == -1) {
             closeListenSockets();
-            throw ServerExcept(errno);
+            throw std::runtime_error(strerror(errno));
         }
         SocketManager::setNonBlocking(fd);
         _tableOfListen[counter]._fd = fd;
@@ -98,20 +104,14 @@ void    SocketManager::bindSockets(size_t counter) {
         throw std::runtime_error(strerror(errno));
     }
     status = bind(_tableOfListen[counter]._fd, reinterpret_cast<struct sockaddr*>(&_tableOfListen[counter].addr), sizeof(struct sockaddr));
-    if (status == 0) {
-        std::cout << "socket fd " << _tableOfListen[counter]._fd << ": binded successfull" << std::endl;
+    if (status != 0 && errno == EADDRINUSE) {
+        _tableOfListen[counter].alreadyBinded = true;
+        close(_tableOfListen[counter]._fd);
+        hanldVirtualHost(_tableOfListen[counter], counter);
+        std::cout << "THIS: " << _tableOfListen[counter]._ip << ":" << _tableOfListen[counter]._port << ", already binded" << std::endl;
     }
-    else if (status < 0) {
-        if (errno == EAGAIN || errno == EADDRINUSE) {
-            _tableOfListen[counter].alreadyBinded = true;
-            close(_tableOfListen[counter]._fd);
-            hanldVirtualHost(_tableOfListen[counter], counter);
-            std::cout << "THIS: " << _tableOfListen[counter]._ip << ":" << _tableOfListen[counter]._port << ", already binded" << std::endl;
-        }
-        else {
-            std::cerr << _tableOfListen[counter]._ip << ": ";
-            throw std::runtime_error(strerror(errno));
-        }
+    else  if (status == 0) {
+        std::cout << "socket fd " << _tableOfListen[counter]._fd << ": binded successfull" << std::endl;
     }
 }
 
@@ -261,31 +261,12 @@ void    SocketManager::runCoreLoop(void) {
     while (true)
     {
 /* -------------------------------------------------------------------------------------
-        if (portCounter() + _clients.size() < _pollfd.size())
-        {
-            for (size_t i = 0; i < _clients.size(); i++)
-            {
-                if (_clients[i]._cgiProc._childPid != -1)
-                {
-                    int results, status = 0;
-                    results = waitpid(_clients[i]._cgiProc._childPid, &status, WNOHANG);
-                    if (results == _clients[i]._cgiProc._childPid)
-                    {
-                        std::cout << CYAN << "Child status has been changed" << RESET << std::endl;
-                    }
-                    else if (results == 0)
-                    {
-                        std::cout << GREEN << "Child still running!" << RESET << std::endl;
-                    }
-                    else {
-                        std::cerr << BG_RED << "Child process error" << std::endl;
-                    }
-                    // if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-                    //     out._code = 500;
-                }
-            }
-        } 
 ---------------------------------------------------------------------------------------*/
+        /**
+         * TODO:
+         * set apropriate response for user time-out ...
+         * 
+         */
         if (PollingForEvents(_pollfd, _server, _clients.size()) == S_TIMEDOUT)
             continue;
         handlErrCloses(_pollfd, _server, _clients.size()); // handle close/error from client-side.
@@ -330,19 +311,34 @@ void    SocketManager::runCoreLoop(void) {
 
         // size_t  cltScop = portCounter() + _clients.size();
         for (size_t i = cltStart; i < ( portCounter() + _clients.size() ); i++) {
-            // cltScop = portCounter() + _clients.size();
- 
-            /*          Request Part       */
 
+            /*     ***************     Request Part    ***************    */
+			
             if ( _pollfd[i].revents & POLLIN ) {
-
-                g_console.log(SERVER, str("Request Handler"), BG_CYAN);
-                if (_server.readClientRequest(_pollfd, i - cltStart, i) == S_CONTINUE)
-                    continue ;
+                
+                ClientState state = _server.readRequest(i - cltStart);
+                if (state == CS_READING_DONE)
+                {
+					std::cout << "request Done!" << std::endl;
+                    _pollfd[i].events |= POLLOUT;
+                    _pollfd[i].events &= ~POLLIN;
+                }
+                else if (state == CS_DISCONNECT || state == CS_FATAL)
+                {
+					std::stringstream   oss;
+                    oss << "peer closed connection, `fd=" << _pollfd[i].fd << "`!";
+                    g_console.log(NOTICE, oss.str(), RED);
+                    _server.handleDisconnect(i - cltStart, _pollfd);
+                    oss.clear();
+                    oss.str("");
+                    continue;
+                }
+                else if (state == CS_READING) /* means; it still reading request ...*/
+                    continue;
             }
-            
-            /*          Response Part       */
-            
+
+            /*    ***************      Response Part     ***************    */
+
             if ( _pollfd[i].revents & POLLOUT )
             {
                 g_console.log(SERVER, str("Response Handler"), BG_CYAN);
@@ -351,26 +347,115 @@ void    SocketManager::runCoreLoop(void) {
                  * ```!_clients[i-cltStart]._alreadyExec``` == Script Of CGI Already Running.
                  * So prevent to run it multiple-time!
                  */
-                if (!_clients[i-cltStart]._alreadyExec && _clients[i-cltStart].getStatus() == CS_CGI_REQ) {
-                    std::cout << "__________________________________" << std::endl;
-                    if (isCgiRequest(_pollfd, _clients[i - cltStart], i)) {
-                        if (_clients[i-cltStart].getCltCgiState() == CCS_FAILLED) {
-                            defErrorResponse(_clients[i-cltStart].getResponse(), _clients[i-cltStart]._cgiProc._statusCode);
-                            _server.responsePart(i - cltStart);
-                            _server.handleDisconnect(i - cltStart, _pollfd);
+                Client&	client = _server.getListOfClients()[i - cltStart];
+
+                if (client.getStatus() == CS_CGI_REQ) {
+                    if (!client._alreadyExec) /* run CGI-script for & add CGIproc{pipe-fd to pollfd, pid} to client-data */
+                    {
+                        /* set time-out for cgi-script */
+                        std::cout << "<<<<<<<<< Is Cgi >>>>>>>>>" << std::endl;
+                        client.setStartTime(std::time(NULL));
+                        client.setTimeOut(CGI_TIME_OUT);
+                        if (isCgiRequest(_pollfd, _clients[i - cltStart], i)) {
+                            if (client.getCltCgiState() == CCS_FAILLED) {
+                                defErrorResponse(client.getResponse(), client._cgiProc._statusCode);
+                                _server.responsePart(i - cltStart);
+                                _server.handleDisconnect(i - cltStart, _pollfd);
+                            }
+                            continue;
                         }
-                        continue;
+                    }
+                    else if (client.getCltCgiState() == CCS_DONE) /** when CGI-script Done, we send appropriate response here. */
+                    {
+                        str buffer = client._cgiOut._output;
+                        if (buffer.empty())
+                        {
+                            
+                            // nothing to send.
+                            _pollfd[i].events |= POLLIN;
+                            _pollfd[i].events &= ~POLLOUT;
+                            client.setClientState(CS_NEW);
+                            client._alreadyExec = false;
+                            client.setResponse(Response());
+                            g_console.log(INFO, str("********* CGI Response Sent ***********"), BG_BLUE);
+                            std::cout << "Client that finish it's script is:" << _pollfd[i].fd << std::endl;
+                            std::cout << BG_CYAN << "All Pollfd: \n[";
+                            for (size_t k = 0; k < _pollfd.size(); k++)
+                            {
+                                std::cout << _pollfd[k].fd << '|' << std::endl;
+                            }
+                            std::cout << ']' << RESET << std::endl;
+                            continue;
+                        }
+
+                        size_t  toSend = std::min<size_t>(buffer.size(), CGI_SEND_BUFFER);
+                        std::cout << "ToSend is:" << toSend << std::endl;
+                        ssize_t sendByte = send(client.getFd(), buffer.c_str(), toSend, 0);
+                        if (sendByte == 0)
+                            _server.handleDisconnect(i - cltStart, _pollfd);
+                        else if (sendByte < 0)
+                        {
+                            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                            {
+                                std::cout << "Try sending again..." << std::endl;
+                                continue;
+                            }
+                            else
+                                throw std::runtime_error(strerror(errno));
+                        }
+                        else
+                        {
+                            client._cgiOut._output.erase(client._cgiOut._output.begin(), client._cgiOut._output.begin() + sendByte);
+                            std::cout << "[INFO]: A chunk of data left" << std::endl;
+                        }
                     }
                 }
-                _server.responsePart(i - cltStart);
-                _pollfd[i].events &= ~POLLOUT;
-                _pollfd[i].revents = 0;
+                /** Handle response for normal HTTP request */
+				else if (client._sendInfo.resStatus != CS_WRITING_DONE)
+				{
+					std::cout << "------ Start Sending ------" << std::endl;
+					sendResponse(client);
+					size_t	dataLen = client._sendInfo.buff.size();
+					const char* dataPtr = client._sendInfo.buff.data();
+
+					ssize_t byte = send(_pollfd[i].fd, dataPtr, dataLen, 0);
+					if (byte < 0)
+					{
+						if (errno == EAGAIN || EWOULDBLOCK)
+						{
+							std::cout << "Try again.." << std::endl;
+							continue;
+						}
+						else
+							throw std::runtime_error(strerror(errno));
+					}
+					else if (byte == 0)
+					{
+						std::cout << "CLose connection " << std::endl;
+						_server.handleDisconnect(i -cltStart, _pollfd);
+						continue;
+					}
+					else if (byte > 0) {
+					    // std::cout << "--- hereeeeeeeee----------------" << std::endl;
+						client._sendInfo.buff.erase(client._sendInfo.buff.begin(), client._sendInfo.buff.begin() + byte);
+					}
+				}
+				if (client._sendInfo.resStatus == CS_WRITING_DONE)
+				{
+                	std::cout << "Finish writing" << std::endl;
+
+					_pollfd[i].events |= POLLIN;
+					_pollfd[i].events &= ~POLLOUT;
+					// throw std::runtime_error("here");
+				}
+                std::cout << "---------------------------" << std::endl;
             }
         }
 	}
 }
 
-bool    SocketManager::isCgiRequest(std::vector<struct pollfd>& pollFd, Client& client, size_t index) {
+bool    SocketManager::isCgiRequest(std::vector<struct pollfd>& pollFd, Client& client, size_t index)
+{
     std::cout << "REQUEST IS CGI" << std::endl;
     CGIProc proc;
 
@@ -407,83 +492,115 @@ void    SocketManager::cgiEventsChecking(std::vector<Client>& clients, std::vect
 
     for (size_t i = cgiScop; i < pollFd.size(); i++)
     {
-        bool    stat = false;
-        if ( pollFd[i].revents & POLLIN )
+        if ( pollFd[i].revents & (POLLIN | POLLHUP) )
         {
-            stat = true;
             std::cout << "Data To Read From CGI PIPE=" << pollFd[i].fd << std::endl;
-            readFromCgi(clients, pollFd, srvr, &i);
-        }
-        if (stat == false) /* Pipe still exist, but no event occur on it; */ {
             /**
-             * - Checking child-process status to Know if that script done and clean ressources.
+             * read result from pipe;
              */
-            readFromCgi(clients, pollFd, srvr, &i);
+            Client& clinet = srvr.getClientReqCGI(pollFd[i].fd);
+            if (pollFd[i].fd == clinet._cgiProc._readPipe)
+            {
+                std::cout << "Client fd=" << clinet.getFd() << " is ready to read from pipe=" << clinet._cgiProc._readPipe <<std::endl;
+                readChild(clinet);
+                /**
+                 * check if Done to set The Client to POLLOUT & remove pipe from pollfd struct.
+                 */
+                if (clinet.getCltCgiState() == CCS_DONE || clinet.getCltCgiState() == CCS_FAILLED)
+                {
+                    for (size_t i = portCounter(); i < portCounter() + clients.size(); i++)
+                    {
+                        if (clinet.getFd() == pollFd[i].fd)
+                        {
+			                std::cout << "Client with fd=" << clinet.getFd() << ", Switched to POLLOUT" << std::endl;
+                            pollFd[i].events |= POLLOUT;
+                            pollFd[i].events &= ~POLLIN;
+                        }
+                    }
+                    if (clinet._cgiProc._readPipe != -1) {
+                        close(clinet._cgiProc._readPipe);
+                        clinet._cgiProc._readPipe = -1;
+                    }
+                    pollFd.erase(pollFd.begin() + i); /* remove pipe fd from pollfd{} */
+                    generate_CGI_Response(clinet); // generate headers for CGI
+                    continue;
+                }
+            }
+            else
+                throw std::runtime_error("Can't found Client CGI");
         }
+   //      if ( pollFd[i].revents & POLLHUP ) /*CGI write everything and closed its stdout (EOF)*/
+   //      {
+   //          /**
+   //           * - check if there is left data in that pipe before colse it.
+   //           */
+   //          Client& clinet = srvr.getClientReqCGI(i);
+   //          if (clinet._cgiProc._readPipe != -1) /* Close pipe*/
+   //          {
+   //              close(clinet._cgiProc._readPipe);
+   //              clinet._cgiProc._readPipe = -1;
+   //          }
+   //          // int status;
+   //          // waitpid(client._cgiProc._childPid, &status, 0);
+   //          // if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+   //          //     out._code = 500;
+			// std::cout << "(((((((   POLLHUP    )))))))" << std::endl;
+
+   //          clinet.setCltCgiState(CCS_DONE);
+   //          for (size_t i = portCounter(); i < portCounter() + clients.size(); i++)
+   //          {
+   //              if (clinet.getFd() == pollFd[i].fd)
+   //              {
+   //                  pollFd[i].events |= POLLOUT;
+   //                  pollFd[i].events &= ~POLLIN;
+   //              }
+   //          }
+   //          close(clinet._cgiProc._readPipe);
+   //          clinet._cgiProc._readPipe = -1;
+   //          pollFd.erase(pollFd.begin() + i);
+   //          /**
+   //           * remove the pipe fd from pollfd struct.
+   //           */
+   //          generate_CGI_Response(clinet); // generate headers for CGI
+   //          std::cout << "Pipe Closed--" << std::endl;
+   //      }
     }
     // std::cout << "***********   Finish Reading  ******************" << std::endl;
 }
 
-void    SocketManager::readFromCgi(__attribute_maybe_unused__ std::vector<Client>& clients, std::vector<struct pollfd>& pollFd, Server& srvr, size_t* coreIndex)
-{
-    /**
-     * => "srvr.getClientReqCGI(*coreIndex)"; getting the client that request for CGI
-    */
-    bool    found = false; /*client that request CGI not exist anymore!*/
-    // for (size_t i = 0; i < clients.size(); i++)
-    // {
-    //     if (clients[i]._cgiProc._readPipe == pollFd[*coreIndex].fd)
-    //     {
-    //         std::cout << clients[i].getFd() << "YESSSSSSSSSSSSSSSSSSSSSSSSSSS" << pollFd[*coreIndex].fd << std::endl;
-    //     }
-        
-    //     std::cout << "client: " << clients[i].getFd() << std::endl;
-    // }
+// void    SocketManager::readFromCgi(std::vector<Client>& clients, std::vector<struct pollfd>& pollFd, Server& srvr, size_t* coreIndex)
+// {
+//     /**
+//      * => "srvr.getClientReqCGI(*coreIndex)"; getting the client that request for CGI
+//     */
+//     // if (pollFd[(*coreIndex)].fd == srvr.getClientReqCGI(*coreIndex)._cgiProc._readPipe) {
+//     //     std::cout << "Client fd=" << srvr.getClientReqCGI(*coreIndex).getFd() << " is ready to read from pipe=" << srvr.getClientReqCGI(*coreIndex)._cgiProc._readPipe <<std::endl;
+//     //     readChild(srvr.getClientReqCGI(*coreIndex));
     
-    std::cout << srvr.getClientReqCGI(pollFd[*coreIndex].fd)._cgiProc._readPipe << ":fd" << srvr.getClientReqCGI(pollFd[*coreIndex].fd).getFd() << ", ->" << pollFd[*coreIndex].fd << std::endl;
-    if (pollFd[(*coreIndex)].fd == srvr.getClientReqCGI(pollFd[*coreIndex].fd)._cgiProc._readPipe) {
-        found = true;
-        std::cout << "Client fd=" << srvr.getClientReqCGI(pollFd[*coreIndex].fd).getFd() << " is ready to read from pipe=" << srvr.getClientReqCGI(pollFd[*coreIndex].fd)._cgiProc._readPipe <<std::endl;
-        CGIOutput   out = readChild(srvr.getClientReqCGI(pollFd[*coreIndex].fd));
+//         /* to move it into response part */if (srvr.getClientReqCGI(*coreIndex).getCltCgiState() == CCS_DONE)
+//         {
+//             Response    res = srvr.getClientReqCGI(*coreIndex).getResponse();
+//             res.setStatus(out._code);
+//             res.addHeaders("Content-Type", "text/palin");
+//             res.addHeaders("Content-Length", iToString(res.getContentLength()));
+//             srvr.getClientReqCGI(*coreIndex).setResponse(res);
+//             // srvr.responsePart(cg);
+//             sendResponse(srvr.getClientReqCGI(*coreIndex));
+//             srvr.getClientReqCGI(*coreIndex).setClientState(CS_NEW); /* reset client state, preventing undefined behavior */
+//             g_console.log(INFO, str("********* CGI Response Sent ***********"), BG_BLUE);
 
-        if (srvr.getClientReqCGI(pollFd[*coreIndex].fd).getCltCgiState() == CCS_DONE)
-        {
-            Response    res = srvr.getClientReqCGI(pollFd[*coreIndex].fd).getResponse();
-            std::cout << "Status Code: " << out._code << std::endl;
-            res.setStatus(out._code);
-            res.addHeaders("Content-Type", "text/palin");
-            res.addHeaders("Content-Length", iToString(res.getContentLength()));
-            srvr.getClientReqCGI(pollFd[*coreIndex].fd).setResponse(res);
-            // srvr.responsePart(cg);
-            sendResponse(srvr.getClientReqCGI(pollFd[*coreIndex].fd));
-            srvr.getClientReqCGI(pollFd[*coreIndex].fd).setClientState(CS_NEW); /* reset client state, preventing undefined behavior */
-            g_console.log(INFO, str("********* CGI Response Sent ***********"), BG_BLUE);
-            
-            std::cout << "PIPE BEFORE REMOVING is:" << pollFd[*coreIndex].fd << std::endl;
-            pollFd.erase(pollFd.begin() + (*coreIndex));
-            std::cout << BG_CYAN << "All Pollfd: \n[";
-            for (size_t i = 0; i < pollFd.size(); i++)
-            {
-                std::cout << pollFd[i].fd << '|' << std::endl;
-            }
-            std::cout << ']' << RESET << std::endl;
-            // srvr.handleDisconnect(cg, pollFd);
-    }
-
-    // for (size_t cg = 0; cg < clients.size(); cg++)
-    // {
-    //     if (pollFd[(*coreIndex)].fd == clients[cg]._cgiProc._readPipe)
-    //     {
-            
-    //         }
-    //         else
-    //             pollFd[*coreIndex].revents = 0;
-    //     }
-    }
-    if (!found) {
-        throw std::runtime_error("SocketManager::handleEvents: No socket found");
-    }
-}
+//             std::cout << "PIPE BEFORE REMOVING is:" << pollFd[*coreIndex].fd << std::endl;
+//             pollFd.erase(pollFd.begin() + (*coreIndex));
+//             std::cout << BG_CYAN << "All Pollfd: \n[";
+//             for (size_t i = 0; i < pollFd.size(); i++)
+//             {
+//                 std::cout << pollFd[i].fd << '|' << std::endl;
+//             }
+//             std::cout << ']' << RESET << std::endl;
+//             // srvr.handleDisconnect(cg, pollFd);
+//     }
+//     // }
+// }
 
 serverBlockHint    SocketManager::detectServerBlock(int sockFd) const {
     serverBlockHint   tmp;

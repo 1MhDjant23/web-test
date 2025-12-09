@@ -18,6 +18,9 @@
 #include <cstddef>
 #include <cstring>
 #include <iostream>
+#include <ostream>
+#include <string>
+#include <vector>
 
 str		joinQuery( const QueryMap& query )
 {
@@ -147,54 +150,68 @@ CGIProc	cgiHandle( CGIContext req, bool *alreadyExec )
 	return (CGIProc(pid, outPipe[0], 200));
 }
 
-CGIOutput readChild(Client& client)
+void readChild(Client& client) 
 {
     CGIOutput out;
-    char buff[CGI_R_BUFFER];
+    std::vector<char>   buff(CGI_R_BUFFER);
 
-    ssize_t byte = read(client._cgiProc._readPipe, buff, sizeof(buff));
-	// std::cout << "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&" << std::endl;
+    ssize_t readByte = read(client._cgiProc._readPipe, buff.data(), buff.size());
 
-    if (byte > 0)
+    if (readByte > 0)
     {
+		// buff[readByte] = '\0';
+		std::cout << "readByte>0: Reading data success.." << std::endl;
+		std::string newBody = client.getResponse().getBody();
+		newBody.append(buff.data(), readByte);
+		client.getResponse().setBody(newBody);
         client.setCltCgiState(CCS_RUNNING);
-		std::cout << "Byte>0" << std::endl;
-		client.getResponse().setBody(client.getResponse().getBody() + str(buff));
-        return out;
     }
-
-    if (byte == 0)
+    if (readByte == 0)
     {
         /**
 		 * Ensure no more data -> Pipe closed -> child has finished writing.
 		 **/
-        close(client._cgiProc._readPipe);
-        client._cgiProc._readPipe = -1;
-
-        int status;
-        waitpid(client._cgiProc._childPid, &status, 0);
-        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-            out._code = 500;
+		std::cout << "readByte=0: no more data to read." << std::endl;
+        if (client._cgiProc._readPipe != -1)
+		{
+			close(client._cgiProc._readPipe);
+			client._cgiProc._readPipe = -1;
+		}
         client.setCltCgiState(CCS_DONE);
-		std::cout << "Pipe Closed--" << std::endl;
-        return out;
     }
-
-    if (byte < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+    if (readByte < 0 )
     {
-		std::cout << "ERRNO EWOULDBLOCK" << std::endl;
-
-        /*No data yet, but child still running*/
-        client.setCltCgiState(CCS_RUNNING);
-        return out;
+		if (errno == EAGAIN || errno == EWOULDBLOCK)
+		{
+			std::cout << "ERRNO EWOULDBLOCK" << std::endl;
+			/*No data yet, but child still running*/
+			client.setCltCgiState(CCS_RUNNING);
+		}
+		else{
+			out._code = 500;
+			close(client._cgiProc._readPipe);
+			client._cgiProc._readPipe = -1;
+			client.setCltCgiState(CCS_FAILLED);
+		}
+		std::cout << "readByte<0: error detected" << std::endl;
     }
-
-	/*real error detected*/
-    out._code = 500;
-    close(client._cgiProc._readPipe);
-    client._cgiProc._readPipe = -1;
-    client.setCltCgiState(CCS_FAILLED);
-
-    return out;
+	client._cgiOut._code = out._code;
 }
 
+void	generate_CGI_Response(Client& client) {
+	Response    res = client.getResponse();
+	
+	// if (client.getCltCgiState() == CCS_FAILLED) {
+	// getSrvErrorPage(res, res.srvEntry, INTERNAL_SERVER_ERROR);
+	// }
+	int status;
+	waitpid(client._cgiProc._childPid, &status, 0);
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		client._cgiOut._code = 500;
+	client._cgiProc._childPid = -1;
+	res.setStatus(client._cgiOut._code);
+	res.addHeaders("Content-Type", "text/plain");
+	res.addHeaders("Content-Length", iToString(res.getContentLength()));
+	client.setResponse(res);
+	client._cgiOut._output = res.generate();
+}
