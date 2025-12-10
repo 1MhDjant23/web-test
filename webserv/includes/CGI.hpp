@@ -13,8 +13,7 @@
 #pragma once
 
 #include "TypeDefs.hpp"
-#include "response.hpp"
-#include "request.hpp" // IWYU pragma: keep
+#include "./request.hpp" // IWYU pragma: keep
 #include <iostream> // IWYU pragma: keep
 #include <poll.h>
 #include <sys/poll.h>

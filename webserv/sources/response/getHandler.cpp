@@ -46,7 +46,7 @@ void listDirectory( str& src, Response& response, Request& request, ServerEntry*
 	str responseHtml = html.str();
 	response.setBody(responseHtml);
 	response.setStatus(OK);
-	response.addHeaders("Content-Length", toString(response.getContentLength()));
+	// response.addHeaders("Content-Length", toString(response.getContentLength()));
 	response.addHeaders("Content-Type", "text/html; charset=UTF-8");
 }
 
@@ -106,7 +106,6 @@ bool isCgi( Location& location, str& src, Client& client, ServerEntry *_srvEntry
 
 void getHandler(ServerEntry *_srvEntry, Request& request, Response& response, str& src, Client& client) {
 	Location location = getLocation(_srvEntry, request, response);
-	response.addHeaders("Accept-Ranges", "bytes");
 	HeadersMap hdrs = request.getHeaders();
 	if (validateRequest(_srvEntry, request, response, location)) {
 		if (request.getPath() == "/") {
@@ -120,6 +119,9 @@ void getHandler(ServerEntry *_srvEntry, Request& request, Response& response, st
 				client.setClientState(CS_CGI_REQ);
 				return;
 			}
+			if (getContentType(src) == "video/mp4" || getContentType(src) == "audio/mpeg") {
+				response.setFlag(true);
+			}
 			genResponse(response, src, _srvEntry);
 			return;
 		} else if (type == 0) {
@@ -127,7 +129,7 @@ void getHandler(ServerEntry *_srvEntry, Request& request, Response& response, st
 			if (path[path.length() - 1] != '/') {
 				location._redirTarget = path += "/";
 				location._redirCode = MOVED_PERMANENTLY;
-				redirResponse(response, location);
+				redirectionResponse(response, location);
 				return;
 			}
 			if (!location._index.empty()) {

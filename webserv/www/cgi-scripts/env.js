@@ -1,4 +1,4 @@
-#!/home/mait-taj/.nvm/versions/node/v24.11.0/bin/node
+#!/usr/bin/env node
 
 /* eslint-disable no-console */
 const { env, stdin, stdout } = process;
@@ -6,6 +6,8 @@ const { env, stdin, stdout } = process;
 // CGI header (recommended)
 // stdout.write("Content-Type: text/plain\r\n\r\n");
 
+console.log();
+console.log();
 console.log("______________________ hello.js ______________________\n");
 
 // Print env vars

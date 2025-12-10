@@ -179,7 +179,7 @@ void processClientRequest( Client& client ) {
 	Request request = client.getRequest();
 	std::vector<char> bufferVec = request.getBuffer();
 	str buffer(bufferVec.begin(), bufferVec.end());
-	ServerEntry* _srvEntry = getSrvBlock( client._serverBlockHint, request );
+	ServerEntry* _srvEntry = client.getResponse().srvEntry;
 	bool reqFlg = request.requestLineErrors( response, _srvEntry );
 	initPath(request);
 	if (!reqFlg) {
@@ -188,8 +188,7 @@ void processClientRequest( Client& client ) {
 		if (requestErrors(request, response, _srvEntry)) {
 			str source = getSource(request, _srvEntry, response);
 			response.setSrc(source);
-			checkMethod( _srvEntry, request, response, source, client );
-			std::cout << "FILEPATH: " << response._filePath << std::endl;
+			checkMethod( _srvEntry, client.getRequest(), response, source, client );
 		}
 	}
 	client.setResponse(response);
@@ -222,6 +221,7 @@ void requestHandler( Client& client ) {
 			client.getRequest().initHeaders(rawHeaders);
 			HeadersMap headers = client.getRequest().getHeaders();
 			ServerEntry* _srvEntry = getSrvBlock( client._serverBlockHint, client.getRequest() );
+			client.getResponse().srvEntry = _srvEntry;
 			str source = getSource(client.getRequest(), _srvEntry, client.getResponse());
 			client.getResponse().setSrc(source);
 
@@ -325,62 +325,4 @@ void requestHandler( Client& client ) {
 		client.setExpectedBodyLength(0);
 		client.setIsChunked(false);
 	}
-}
-
-long long getFileSize( const str& src ) {
-	struct stat st;
-
-	if (stat(src.c_str(), &st) == -1)
-		return -1;
-	if (!S_ISREG(st.st_mode))
-		return -1;
-
-	return (long long)st.st_size;
-}
-
-bool send_file_chunk(int client_socket, const std::string& filepath, long long start, long long end) {
-	int fd = open(filepath.c_str(), O_RDONLY);
-	if (fd == -1) {
-		return false;
-	}
-
-	if (lseek(fd, start, SEEK_SET) == (off_t)-1) {
-		close(fd);
-		return false;
-	}
-
-	long long bytes_to_send = end - start + 1;
-	long long bytes_sent_total = 0;
-
-	const int CHUNK_SIZE = 8192;  // 8 KB → perfect balance
-	char buffer[CHUNK_SIZE];
-
-	while (bytes_sent_total < bytes_to_send) {
-		long long remaining = bytes_to_send - bytes_sent_total;
-		int to_read = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : (int)remaining;
-
-		ssize_t bytes_read = read(fd, buffer, to_read);
-		if (bytes_read <= 0) {
-			if (bytes_read < 0) {
-				// real error
-				close(fd);
-				return false;
-			}
-			break;
-		}
-		ssize_t bytes_sent = send(client_socket, buffer, bytes_read, 0);
-		if (bytes_sent != bytes_read) {
-			close(fd);
-			return false;
-		}
-		bytes_sent_total += bytes_sent;
-	}
-
-	close(fd);
-	return true;
-}
-
-void send_response_headers(int client_socket, const Response& resp) {
-	std::string headers = resp.generate();
-	send(client_socket, headers.c_str(), headers.length(), 0);
 }

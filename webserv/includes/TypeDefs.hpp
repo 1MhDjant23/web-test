@@ -22,8 +22,8 @@
 #include <exception> // IWYU pragma: keep
 #include <cstdlib>
 #include <limits> // IWYU pragma: keep
-#include <algorithm>
-#include <deque>
+// #include <algorithm>
+// #include <deque>
 #include <cctype>
 #include <sys/stat.h>
 #include <unistd.h>

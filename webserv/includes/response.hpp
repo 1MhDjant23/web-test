@@ -1,11 +1,10 @@
 #ifndef __RESPONSE_HPP__
 #define __RESPONSE_HPP__
 
-#include "./Utils.hpp"
+// #include "./Utils.hpp"
 #include "./TypeDefs.hpp"
-#include "./serverHeader/ServerUtils.hpp"
 #include "../sources/request/utils.tpp"
-#include "SocketManager.hpp"
+#include "./serverHeader/SocketManager.hpp"
 
 #define OK 200
 #define CREATED 201
@@ -30,6 +29,13 @@ class Request;
 struct StatusEntry {
 	int code;
 	str message;
+};
+
+struct Range {
+	long long start;
+	long long end;
+	bool valid;
+	str error;
 };
 
 class Response {
@@ -94,7 +100,7 @@ void getHandler( ServerEntry *_srvEntry, Request& request, Response& response, s
 void defErrorResponse( Response& response, int code);
 bool startsWith( const str& path, const str& start );
 Location getLocation( ServerEntry *_srvEntry, Request& request, Response& response );
-void redirResponse( Response& response, Location location );
+void redirectionResponse( Response& response, Location location );
 str getContentType( const str& path );
 void genResponse( Response& response, str& src, ServerEntry* _srvEntry );
 bool validateRequest( ServerEntry *_srvEntry, Request& request, Response& response, Location& location );
@@ -105,5 +111,8 @@ bool isCgi( Location& location, str& src, Client& client, ServerEntry *_srvEntry
 void getSrvErrorPage( Response& response, ServerEntry* _srvEntry, int code );
 size_t sToSize_t( const str& str );
 str getFileType( const str& type );
+long long getFileSize( const str& src );
+Range parseRangeHeader(const std::string& rangeHeader, long long fileSize);
+ServerEntry* getSrvBlock( serverBlockHint& _srvBlockHint, Request& request);
 
 #endif

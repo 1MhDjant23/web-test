@@ -1,13 +1,9 @@
 #pragma once
 
 #include <ctime>
-// #include <SocketManager.hpp>
-// #include "./Server.hpp"
 #include <cstring>
 #include "SocketManager.hpp"
-// #include "ServerUtils.hpp"
 #include "../CGI.hpp"
-// #include "../CGI.hpp"
 #include "../request.hpp"
 // class Server;
 // class Request;
@@ -30,6 +26,11 @@ enum    ClientState {   // Enum for Clients state only
     // CS_CGI_PROCESSING // FOR CGI REQUEST
 };
 
+enum    Connection{
+    CLOSED,
+    KEEP_ALIVE
+};
+
 enum    ClientCGIState{
     CCS_FAILLED,
     CCS_RUNNING,
@@ -45,6 +46,7 @@ struct  SendINfo /* */
     std::vector<char> buff;
     ClientState resStatus;
     int         fd;
+	Connection	connectionState;
 };
 
 enum ParseState {
@@ -84,6 +86,7 @@ class   Client {
         ~Client();
 		ParseState _state;
         int         getFd() const;
+        void        setFd(int fd);
         const CGIContext&  getCgiContext(void) const;
 		Request&    getRequest();
 		Response&   getResponse();
@@ -95,12 +98,12 @@ class   Client {
         ClientCGIState  getCltCgiState() const;
         // Time-Out methode handler
         
-        void            setRemainingTime(wsrv_timer_t remaining);
-        wsrv_timer_t    getRemainingTime(void) const;
-        void            setStartTime(std::time_t start);
-        void            setTimeOut(std::time_t timeout);
-        std::time_t     getTimeOut() const;
-        std::time_t     getStartTime(void) const;
+        void        setRemainingTime(wsrv_timer_t remaining);
+        wsrv_timer_t getRemainingTime(void) const;
+        void        setStartTime(std::time_t start);
+        void        setTimeOut(std::time_t timeout);
+        std::time_t   getTimeOut() const;
+        std::time_t   getStartTime(void) const;
 
 		str& getLeftover( void );
 		size_t getExpectedBodyLength( void ) const;
@@ -115,5 +118,3 @@ class   Client {
 		size_t _uploadedBytes;
 
 };
-
-ServerEntry* getSrvBlock( serverBlockHint& _srvBlockHint, Request& request);

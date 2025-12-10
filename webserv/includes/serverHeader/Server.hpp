@@ -1,23 +1,17 @@
 #pragma once
 
+#include  "./Client.hpp"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <poll.h>
-// #include <iostream>
-// #include <vector>
 #include <cstring>
 #include <cerrno>
 typedef    size_t    wsrv_timer_t;
-#include  "./Client.hpp"
 #include "SocketManager.hpp"
-// #include "../Config.hpp"
-// #include "ServerExcept.hpp"
 #include "CookiesSessionManager.hpp"
 #include <fcntl.h>
-// enum    Status;
 
-// class     Client;
 struct Data;
 class Server
 {

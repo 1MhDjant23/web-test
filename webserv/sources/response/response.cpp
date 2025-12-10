@@ -141,31 +141,24 @@ str Response::generate( void ) const {
 	return HTTPresponse; */
 }
 
-struct Range {
-	long long start;
-	long long end;
-	bool valid;
-	str error;
-};
-
-Range parse_range_header(const std::string& range_header, long long file_size) {
+Range parseRangeHeader(const std::string& rangeHeader, long long fileSize) {
 	Range r = {-1, -1, false, ""};
 
-	if (range_header.size() < 7 || range_header.substr(0, 6) != "bytes=") {
+	if (rangeHeader.size() < 7 || rangeHeader.substr(0, 6) != "bytes=") {
 		r.error = "Not bytes=";
 		return r;
 	}
 
-	std::string range_spec = range_header.substr(6);
+	std::string rangeSpec = rangeHeader.substr(6);
 
-	size_t dash_pos = range_spec.find('-');
-	if (dash_pos == std::string::npos) {
+	size_t dashPos = rangeSpec.find('-');
+	if (dashPos == std::string::npos) {
 		r.error = "No dash found";
 		return r;
 	}
 
-	std::string first  = range_spec.substr(0, dash_pos);
-	std::string second = range_spec.substr(dash_pos + 1);
+	std::string first  = rangeSpec.substr(0, dashPos);
+	std::string second = rangeSpec.substr(dashPos + 1);
 
 	char* endptr;
 
@@ -197,51 +190,52 @@ Range parse_range_header(const std::string& range_header, long long file_size) {
 	}
 
 	if (r.start == -1 && r.end != -1) {
-		if (r.end <= 0 || r.end > file_size) {
+		if (r.end <= 0 || r.end > fileSize) {
 			r.error = "Invalid suffix length";
 			return r;
 		}
-		r.start = file_size - r.end;
-		r.end   = file_size - 1;
+		r.start = fileSize - r.end;
+		r.end   = fileSize - 1;
 	}
 
-	if (r.start != -1 && r.start >= file_size) 	{
+	if (r.start != -1 && r.start >= fileSize) 	{
 		r.valid = false;
 		r.error = "Start beyond EOF";
 		return r;
 	}
 
 	if (r.end == -1)
-		r.end = file_size - 1;
+		r.end = fileSize - 1;
 
 	if (r.start == -1)
 		r.start = 0;
 
-	r.start = std::max(0LL, std::min(r.start, file_size - 1));
-	r.end   = std::min(r.end, file_size - 1);
+	r.start = std::max(0LL, std::min(r.start, fileSize - 1));
+	r.end   = std::min(r.end, fileSize - 1);
 
 	r.valid = true;
 	return r;
 }
 
-void sendResponse(Client& client)
-{
+void sendResponse(Client& client) {
 	Response& response = client.getResponse();
 
+	const HeadersMap& reqHeaders = client.getRequest().getHeaders();
 	if (client._sendInfo.resStatus == CS_START_SEND) {
-		/* reset time-out to send response */
-		client.setStartTime(std::time(NULL));
-		client.setTimeOut(CLIENT_BODY_TIMEOUT);
 		str headers = response.generate();
 		client._sendInfo.buff.assign(headers.begin(), headers.end());
 		client._sendInfo.resStatus = CS_WRITING;
+		if (response.getFlag() && !reqHeaders.count("Range")) {
+			client._sendInfo.resStatus = CS_WRITING_DONE;
+			client._sendInfo.connectionState = CLOSED;
+			return;
+		}
 	}
 
 	if (response._streamFile) {
 		if (response._bytesSent == 0) {
-			const HeadersMap& reqHeaders = client.getRequest().getHeaders();
 			if (reqHeaders.count("Range")) {
-				Range r = parse_range_header(reqHeaders.at("Range"), response._fileSize);
+				Range r = parseRangeHeader(reqHeaders.at("Range"), response._fileSize);
 				if (r.valid) {
 					response.setStatus(PARTIAL_CONTENT);
 					response.addHeaders("Content-Range",
@@ -251,6 +245,10 @@ void sendResponse(Client& client)
 					str newHeaders = response.generate();
 					client._sendInfo.buff.assign(newHeaders.begin(), newHeaders.end());
 					response._fileOffset = r.start;
+					// return;
+				} else {
+					getSrvErrorPage(response, response.srvEntry, RANGE_NOT_SATISFIABLE);
+					client._sendInfo.resStatus = CS_WRITING_DONE;
 					return;
 				}
 			}
@@ -261,16 +259,15 @@ void sendResponse(Client& client)
 			if (client._sendInfo.fd == -1) {
 				getSrvErrorPage(response, response.srvEntry, INTERNAL_SERVER_ERROR);
 				client._sendInfo.resStatus = CS_WRITING_DONE;
-				// client.setClientState(CS_DISCONNECT);
 				return;
 			}
 		}
 
 		const size_t CHUNK_SIZE = SRV_SEND_BUFFER;
 		char buffer[CHUNK_SIZE];
-
 		off_t offset = response._fileOffset;
 		ssize_t toRead = CHUNK_SIZE;
+
 		if (response._fileSize - offset < (off_t)CHUNK_SIZE)
 			toRead = response._fileSize - offset;
 
@@ -280,18 +277,15 @@ void sendResponse(Client& client)
 				close(client._sendInfo.fd);
 				client._sendInfo.fd = -1;
 				client._sendInfo.resStatus = CS_WRITING_DONE;
-				// client.setClientState(CS_KEEPALIVE);
 			} else {
 				close(client._sendInfo.fd);
 				client._sendInfo.fd = -1;
 				getSrvErrorPage(response, response.srvEntry, INTERNAL_SERVER_ERROR);
 				client._sendInfo.resStatus = CS_WRITING_DONE;
 				return;
-				// client.setClientState(CS_DISCONNECT);
 			}
 			return;
 		}
-
 		client._sendInfo.buff.insert(client._sendInfo.buff.end(), buffer, buffer + bytesRead);
 		response._fileOffset += bytesRead;
 		response._bytesSent += bytesRead;
@@ -308,6 +302,5 @@ void sendResponse(Client& client)
 	// probably 204/304/201
 	if (client._sendInfo.buff.empty()) {
 		client._sendInfo.resStatus = CS_WRITING_DONE;
-		client.setClientState(CS_KEEPALIVE);
 	}
 }

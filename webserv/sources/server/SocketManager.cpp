@@ -415,8 +415,7 @@ void    SocketManager::runCoreLoop(void) {
                         }
                     }
                 } /* **************************************************** */
-               
-				else if (client._sendInfo.resStatus != CS_WRITING_DONE)  /** Handle response for normal HTTP request */
+                if (client.getStatus() != CS_CGI_REQ || client._sendInfo.resStatus != CS_WRITING_DONE)  /** Handle response for normal HTTP request */
 				{
 					std::cout << "------ Start Sending ------" << std::endl;
 					sendResponse(client);
@@ -448,7 +447,10 @@ void    SocketManager::runCoreLoop(void) {
 				if (client._sendInfo.resStatus == CS_WRITING_DONE)
 				{
                 	std::cout << "Finish writing" << std::endl;
-
+                 if (client._sendInfo.connectionState == CLOSED) {
+                     _server.handleDisconnect(i - cltStart, _pollfd);
+                     continue;
+                 }
 					_pollfd[i].events |= POLLIN;
 					_pollfd[i].events &= ~POLLOUT;
 					// throw std::runtime_error("here");
