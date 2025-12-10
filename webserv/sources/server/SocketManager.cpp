@@ -10,10 +10,6 @@
 #include <iostream>
 #include <stdexcept>
 #include <sys/poll.h>
-// #include "../CGI.hpp"
-// #include "../../includes/Utils.hpp"
-
-// CONSOLE g_console;
 
 SocketManager::SocketManager(Data& config, std::vector<TableOfListen>& tableOfListen) : _config(&config), _tableOfListen(tableOfListen) {
     g_console.log(SOCKET_MANAGER, str("Start managing listening sockets..."), BG_GREEN);
@@ -415,7 +411,7 @@ void    SocketManager::runCoreLoop(void) {
                         }
                     }
                 } /* **************************************************** */
-                if (client.getStatus() != CS_CGI_REQ || client._sendInfo.resStatus != CS_WRITING_DONE)  /** Handle response for normal HTTP request */
+                if (client.getStatus() != CS_CGI_REQ && client._sendInfo.resStatus != CS_WRITING_DONE)  /** Handle response for normal HTTP request */
 				{
 					std::cout << "------ Start Sending ------" << std::endl;
 					sendResponse(client);
