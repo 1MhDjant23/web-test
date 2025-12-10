@@ -187,28 +187,31 @@ void    Server::responsePart(size_t cltIndex) {
 void    Server::handleDisconnect(int index, std::vector<struct pollfd>& _pollfd) {
     std::stringstream   oss;
 
-    close(_client[index].getFd());
     oss << "User With `fd=" << _client[index ].getFd() << "` Disconnected!";
     if (_client[index]._cgiProc._readPipe != -1) {
         /* Close the CGI Pipe If that client request it and remove it from poll() */
         for (size_t i = _OpenPort + _client.size(); i < _pollfd.size(); i++) {
-                if (_pollfd[i].fd == _client[index]._cgiProc._readPipe) {
-                    if (_client[index]._cgiProc._childPid != -1) {
-                        g_console.log(INFO, str("Child process killed with success."), BLUE);
-                        kill(_client[index]._cgiProc._childPid, SIGTERM);
-                        int status;
-                        waitpid(_client[index]._cgiProc._childPid, &status, 0);
-                        /**
-                         * TODO: response for that user.
-                         */
-                        _client[index]._cgiProc._childPid = -1;
-                    }
-                    close(_pollfd[i].fd);
-                    _pollfd.erase(_pollfd.begin() + i); /* remove pipe fd from pollfd{} */
-                    break;
+            if (_pollfd[i].fd == _client[index]._cgiProc._readPipe) {
+                if (_client[index]._cgiProc._childPid != -1) {
+                    CGI_errorResponse(_client[index], 504);
+                    std::cout << "Time-out Response .." << std::endl;
+                    g_console.log(INFO, str("Child process killed with success."), BLUE);
+                    std::cout << "PID:" << _client[index]._cgiProc._childPid << std::endl;
+                    kill(_client[index]._cgiProc._childPid, SIGKILL);
+                    int status;
+                    waitpid(_client[index]._cgiProc._childPid, &status, 0);
+                    /**
+                     * TODO: response for that user.
+                     */
+                    _client[index]._cgiProc._childPid = -1;
                 }
+                close(_pollfd[i].fd);
+                _pollfd.erase(_pollfd.begin() + i); /* remove pipe fd from pollfd{} */
+                break;
             }
+        }
     }
+    close(_client[index].getFd());
     _pollfd.erase(_pollfd.begin() + _OpenPort + index); /* remove user fd from pollfd{} */
     _client.erase(_client.begin() + index); /* remove user fd from Client{} */
     g_console.log(SERVER, oss.str(), RED);
@@ -240,4 +243,14 @@ Client& Server::getClientReqCGI(int pipeFd) {
      * so, it's just to silent errors!*/
      g_console.log(WARNING, str("Can't find User That request for CGI"), BG_RED);
     return _client[0];
+}
+
+void    CGI_errorResponse(Client& client, int statusCode) {
+    Request&    req = client.getRequest();
+    Response    res = client.getResponse();
+    ServerEntry* _srvEntry = getSrvBlock( client._serverBlockHint, req );
+    
+    getSrvErrorPage(res, _srvEntry, statusCode);
+    str buffer = res.generate();
+    send(client.getFd(), buffer.c_str(), buffer.size(), 0);
 }

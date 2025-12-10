@@ -3,6 +3,7 @@
 
 #include "./Utils.hpp"
 #include "./TypeDefs.hpp"
+#include "./serverHeader/ServerUtils.hpp"
 #include "../sources/request/utils.tpp"
 #include "SocketManager.hpp"
 

@@ -169,7 +169,7 @@ void    SocketManager::setListenEvent(std::vector<struct pollfd>& _pollfd) {
 
 bool    SocketManager::checkForNewClients( std::vector<struct pollfd>& _pollfd, Server& _server ) {
     int 	clientFd;
-    for (size_t	i = 0; i < portCounter(); i++) 
+    for (size_t	i = 0; i < portCounter(); i++)
     {
         if (_pollfd[i].revents & POLLIN)
         {
@@ -209,6 +209,7 @@ Status  SocketManager::PollingForEvents(std::vector<struct pollfd>& pollFd, Serv
 
     (cltSize == 0 ? coreTimeOut = -1 : coreTimeOut = server.wsrv_find_next_timeout()*1000);
     g_console.log(SERVER, str("POLLING For Events..."), BG_GREEN);
+    displayPOllList(pollFd);
     totalEvent = poll(pollFd.data(), pollFd.size(), static_cast<int>(coreTimeOut));
     if (totalEvent == 0 && cltSize > 0)
     {
@@ -227,7 +228,7 @@ Status  SocketManager::PollingForEvents(std::vector<struct pollfd>& pollFd, Serv
     return NON;
 }
 
-void        SocketManager::handlErrCloses(std::vector<struct pollfd>& _pollfd, Server& server, size_t cltSize){
+void    SocketManager::handlErrCloses(std::vector<struct pollfd>& _pollfd, Server& server, size_t cltSize){
     size_t  clientStart = portCounter();
     std::stringstream   oss;
     (void)cltSize;
@@ -349,19 +350,24 @@ void    SocketManager::runCoreLoop(void) {
                  */
                 Client&	client = _server.getListOfClients()[i - cltStart];
 
-                if (client.getStatus() == CS_CGI_REQ) {
+                if (client.getStatus() == CS_CGI_REQ) { /* ****** CGI Handler exec/response ****** */
                     if (!client._alreadyExec) /* run CGI-script for & add CGIproc{pipe-fd to pollfd, pid} to client-data */
                     {
                         /* set time-out for cgi-script */
                         std::cout << "<<<<<<<<< Is Cgi >>>>>>>>>" << std::endl;
-                        client.setStartTime(std::time(NULL));
-                        client.setTimeOut(CGI_TIME_OUT);
                         if (isCgiRequest(_pollfd, _clients[i - cltStart], i)) {
+                            client.setStartTime(std::time(NULL));
                             if (client.getCltCgiState() == CCS_FAILLED) {
-                                defErrorResponse(client.getResponse(), client._cgiProc._statusCode);
-                                _server.responsePart(i - cltStart);
-                                _server.handleDisconnect(i - cltStart, _pollfd);
+                                CGI_errorResponse(_clients[i - cltStart], _clients[i - cltStart]._cgiProc._statusCode);
+                                client.setTimeOut(CLIENT_HEADER_TIMEOUT); /* waiting for new request */
+                                client.setClientState(CS_NEW);
+                                _pollfd[i].events |= POLLIN;
+                                _pollfd[i].events &= ~POLLOUT;
+                                // defErrorResponse(client.getResponse(), client._cgiProc._statusCode);
+                                // _server.responsePart(i - cltStart);
+                                // _server.handleDisconnect(i - cltStart, _pollfd);
                             }
+                            client.setTimeOut(CGI_TIME_OUT); /* wait for CGI-script to finish */
                             continue;
                         }
                     }
@@ -370,7 +376,6 @@ void    SocketManager::runCoreLoop(void) {
                         str buffer = client._cgiOut._output;
                         if (buffer.empty())
                         {
-                            
                             // nothing to send.
                             _pollfd[i].events |= POLLIN;
                             _pollfd[i].events &= ~POLLOUT;
@@ -409,9 +414,9 @@ void    SocketManager::runCoreLoop(void) {
                             std::cout << "[INFO]: A chunk of data left" << std::endl;
                         }
                     }
-                }
-                /** Handle response for normal HTTP request */
-				else if (client._sendInfo.resStatus != CS_WRITING_DONE)
+                } /* **************************************************** */
+               
+				else if (client._sendInfo.resStatus != CS_WRITING_DONE)  /** Handle response for normal HTTP request */
 				{
 					std::cout << "------ Start Sending ------" << std::endl;
 					sendResponse(client);
@@ -522,6 +527,8 @@ void    SocketManager::cgiEventsChecking(std::vector<Client>& clients, std::vect
                         clinet._cgiProc._readPipe = -1;
                     }
                     pollFd.erase(pollFd.begin() + i); /* remove pipe fd from pollfd{} */
+                    clinet.setStartTime(std::time(NULL)); /* reset time-out for sending response */
+                    clinet.setTimeOut(CLIENT_BODY_TIMEOUT);/* ********************************* */
                     generate_CGI_Response(clinet); // generate headers for CGI
                     continue;
                 }
@@ -637,3 +644,11 @@ size_t SocketManager::portCounter(void) const {
     return count;
 }
 
+void    displayPOllList(const std::vector<pollfd>& list) {
+    std::cout << CYAN << "List Of pllfd{}:" << RESET << std::endl;
+    for (size_t i = 0; i < list.size(); i++)
+    {
+        std::cout << list[i].fd << "   ";
+    }
+    std::cout << GREEN << " -|" << RESET << std::endl;
+}

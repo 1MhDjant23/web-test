@@ -41,3 +41,5 @@ class Server
         ClientState    readRequest(size_t cltIndx);
         ClientState    cgiRespond(Client& client);
 };
+
+void    CGI_errorResponse(Client& client, int statusCode);

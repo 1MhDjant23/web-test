@@ -229,6 +229,9 @@ void sendResponse(Client& client)
 	Response& response = client.getResponse();
 
 	if (client._sendInfo.resStatus == CS_START_SEND) {
+		/* reset time-out to send response */
+		client.setStartTime(std::time(NULL));
+		client.setTimeOut(CLIENT_BODY_TIMEOUT);
 		str headers = response.generate();
 		client._sendInfo.buff.assign(headers.begin(), headers.end());
 		client._sendInfo.resStatus = CS_WRITING;

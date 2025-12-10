@@ -115,3 +115,5 @@ class   Client {
 		size_t _uploadedBytes;
 
 };
+
+ServerEntry* getSrvBlock( serverBlockHint& _srvBlockHint, Request& request);
